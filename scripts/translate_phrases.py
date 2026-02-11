@@ -4,8 +4,8 @@ import time
 
 # Configuración
 API_KEY = os.environ.get("GEMINI_API_KEY")
-INPUT_FILE = "lang/en/phrases.xml"  # <--- CAMBIA ESTO POR TU RUTA REAL
-OUTPUT_FILE = "lang/es/phrases-es-translated.xml" # Ruta de salida
+INPUT_FILE = "lang/en/system.xml"  # <--- CAMBIA ESTO POR TU RUTA REAL
+OUTPUT_FILE = "lang/es/system-es-.xml" # Ruta de salida
 
 def translate_file():
     if not API_KEY:
