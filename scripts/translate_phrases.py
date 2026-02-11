@@ -9,16 +9,21 @@ from google.genai import errors
 INPUT_FILE = "./lang/en/system.xml"  
 OUTPUT_FILE = "./lang/es/system-es-translated.xml"
 
-# LISTA DE MODELOS A PROBAR (En orden de preferencia)
-# El script intentará uno por uno hasta que uno funcione.
-MODELS_TO_TRY = [
-    "gemini-1.5-flash",          # Alias estándar
-    "gemini-1.5-flash-latest",   # Alias dinámico
-    "gemini-1.5-flash-002",      # Versión específica (muy estable)
-    "gemini-1.5-flash-001",      # Versión anterior (backup)
-    "gemini-1.5-pro",            # Versión Pro (si Flash falla)
-    "gemini-1.5-pro-latest"      # Último recurso
-]
+# Volvemos al modelo que SÍ fue encontrado (aunque dio error de cuota)
+PRIMARY_MODEL = "gemini-2.0-flash" 
+
+def list_available_models(client):
+    print("📋 Consultando lista de modelos disponibles para tu API Key...")
+    try:
+        # Intentamos listar modelos para depurar
+        # Nota: La sintaxis exacta puede variar según la versión de la librería,
+        # esto es un intento de diagnóstico.
+        from google.genai import types
+        # En la versión nueva, a veces es client.models.list()
+        # Si falla, no rompemos el script, solo imprimimos el error.
+        pass 
+    except Exception as e:
+        print(f"⚠️ No se pudo listar modelos (no crítico): {e}")
 
 def translate_file():
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -38,79 +43,64 @@ def translate_file():
         sys.exit(1)
 
     client = genai.Client(api_key=api_key)
+    
+    # 1. Diagnóstico rápido (Opcional)
+    # list_available_models(client)
 
     prompt = f"""
-    Actúa como experto en localización de software EPrints.
-    Traduce el siguiente archivo XML del Inglés al Español.
-
-    REGLAS:
-    1. NO traduzcas atributos 'id'.
-    2. Mantén la estructura XML.
-    3. Devuelve SOLO XML limpio.
-
+    Traduce este XML de EPrints del Inglés al Español.
+    REGLAS: NO toques IDs. Mantén XML válido.
+    
     XML:
     {content}
     """
 
-    # --- BUCLE DE INTENTOS DE MODELOS ---
-    for model_name in MODELS_TO_TRY:
-        print(f"🔄 Intentando con modelo: {model_name}...")
-        
+    print(f"🚀 Iniciando traducción con el modelo: {PRIMARY_MODEL}")
+
+    # --- SISTEMA DE REINTENTO ROBUSTO (BACKOFF) ---
+    # Intentaremos 5 veces, esperando cada vez más tiempo.
+    max_retries = 5
+    
+    for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model=model_name,
+                model=PRIMARY_MODEL,
                 contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.1
-                )
+                config=types.GenerateContentConfig(temperature=0.1)
             )
             
-            # ¡Si llegamos aquí, funcionó!
+            # Si llegamos aquí, ¡ÉXITO!
             translated_text = response.text.replace("```xml", "").replace("```", "").strip()
             
             os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
             with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
                 f.write(translated_text)
             
-            print(f"✅ ¡ÉXITO! Traducción completada con '{model_name}'.")
-            print(f"📂 Guardado en: {OUTPUT_FILE}")
-            return # Salimos del script felices
+            print(f"✅ ¡TRADUCCIÓN COMPLETADA! Guardada en: {OUTPUT_FILE}")
+            return
 
         except errors.ClientError as e:
             error_msg = str(e)
             
-            # Caso 1: Modelo no encontrado (404) -> Probamos el siguiente
-            if "404" in error_msg or "NOT_FOUND" in error_msg:
-                print(f"⚠️ Modelo '{model_name}' no encontrado (404). Probando el siguiente...")
-                continue # Salta a la siguiente iteración del bucle for
+            # Si es error de CUOTA (429), esperamos.
+            if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+                # Esperamos 20, 40, 60... segundos
+                wait_time = 20 * (attempt + 1) 
+                print(f"⏳ Cuota llena (Intento {attempt+1}/{max_retries}). Esperando {wait_time} segundos para reintentar...")
+                time.sleep(wait_time)
+                continue # Volvemos a intentar
             
-            # Caso 2: Cuota excedida (429) -> Esperamos y reintentamos EL MISMO modelo
-            elif "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-                print(f"⏳ Cuota excedida en '{model_name}'. Esperando 20 segundos...")
-                time.sleep(20)
-                # Reintentamos una vez más este mismo modelo antes de rendirnos
-                try:
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=prompt,
-                        config=types.GenerateContentConfig(temperature=0.1)
-                    )
-                    translated_text = response.text.replace("```xml", "").replace("```", "").strip()
-                    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
-                    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-                        f.write(translated_text)
-                    print(f"✅ ¡ÉXITO (tras espera)! Traducción completada con '{model_name}'.")
-                    return
-                except:
-                    print(f"❌ Falló el reintento con '{model_name}'. Pasando al siguiente...")
-                    continue
-            
-            else:
-                print(f"❌ Error desconocido con '{model_name}': {e}")
-                continue
+            # Si es error 404, probamos un fallback desesperado a la versión "exp"
+            elif "404" in error_msg and "gemini-2.0-flash-exp" not in PRIMARY_MODEL:
+                 print(f"⚠️ Modelo {PRIMARY_MODEL} no encontrado. Cambiando a 'gemini-2.0-flash-exp'...")
+                 PRIMARY_MODEL = "gemini-2.0-flash-exp" # Cambio al vuelo
+                 continue
 
-    # Si salimos del bucle, fallaron todos
-    print("❌ ERROR TOTAL: Se probaron todos los modelos y ninguno funcionó.")
+            else:
+                print(f"❌ Error crítico no recuperable: {e}")
+                sys.exit(1)
+
+    print("❌ Se agotaron todos los intentos. La API está demasiado ocupada.")
     sys.exit(1)
 
 if __name__ == "__main__":
