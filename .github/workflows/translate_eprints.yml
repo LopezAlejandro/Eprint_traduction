@@ -27,7 +27,7 @@ jobs:
 
       - name: Instalar librerías
         run: |
-          pip install google-generativeai
+          pip install google-genai
 
       - name: Ejecutar traducción
         env:
