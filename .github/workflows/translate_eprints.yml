@@ -4,7 +4,7 @@ name: Traducir Phrases EPrints
 on:
   push:
     paths:
-      - 'lang/en/phrases.xml' # <--- AJUSTA ESTA RUTA A LA DE TU ARCHIVO REAL
+      - 'lang/en/system.xml' # <--- AJUSTA ESTA RUTA A LA DE TU ARCHIVO REAL
     branches:
       - main  # O la rama que uses
 
