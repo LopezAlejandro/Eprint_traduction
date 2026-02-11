@@ -7,6 +7,8 @@ on:
       - 'lang/en/system.xml' # <--- AJUSTA ESTA RUTA A LA DE TU ARCHIVO REAL
     branches:
       - main  # O la rama que uses
+  # Activación MANUAL (Botón de pánico)
+  workflow_dispatch:  # <--- AGREGA ESTA LÍNEA
 
 jobs:
   translate:
