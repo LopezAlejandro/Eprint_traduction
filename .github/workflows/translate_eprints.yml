@@ -1,0 +1,49 @@
+name: Traducir Phrases EPrints
+
+# Se activa cuando haces push en el archivo de frases en inglés
+on:
+  push:
+    paths:
+      - 'lang/en/phrases.xml' # <--- AJUSTA ESTA RUTA A LA DE TU ARCHIVO REAL
+    branches:
+      - main  # O la rama que uses
+
+jobs:
+  translate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Permiso para escribir en el repo
+
+    steps:
+      - name: Chequear código
+        uses: actions/checkout@v3
+
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Instalar librerías
+        run: |
+          pip install google-generativeai
+
+      - name: Ejecutar traducción
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python scripts/translate_phrases.py
+
+      - name: Crear rama y subir cambios
+        run: |
+          # Configuración de Git
+          git config --global user.name 'Traductor Bot'
+          git config --global user.email 'bot@noreply.github.com'
+          
+          # Crear nueva rama
+          git checkout -b traduccion-automatica-$(date +%s)
+          
+          # Añadir archivo
+          git add lang/es/phrases-es-translated.xml
+          
+          # Commit y Push
+          git commit -m "Traducción automática de phrases.xml"
+          git push origin HEAD
